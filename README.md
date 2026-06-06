@@ -8,6 +8,7 @@ What it does:
 - Fetches the public video page through a small local API, because browsers cannot reliably read YouTube pages directly due to CORS.
 - Extracts links from the video description only.
 - Filters common creator/social/profile links and likely sponsored/affiliate/promo links.
+- Fetches each remaining target page and builds a non-AI preview from target metadata, favicon, image, and visible paragraph text.
 - Keeps each extracted link tied back to the original YouTube video URL.
 
 ## Run locally

@@ -3,12 +3,21 @@ import { createRoot } from 'react-dom/client';
 import { ExternalLink, Filter, Link2, Loader2, PlayCircle, ShieldCheck } from 'lucide-react';
 import './styles.css';
 
+type LinkPreview = {
+  title: string;
+  description: string;
+  image?: string;
+  favicon?: string;
+  source: 'target-content' | 'description-line' | 'host-fallback';
+};
+
 type ExtractedLink = {
   url: string;
   host: string;
   description: string;
   videoTitle?: string;
   videoUrl: string;
+  preview?: LinkPreview;
 };
 
 type ExtractionResult = {
@@ -54,7 +63,7 @@ function App() {
   async function copyAll() {
     if (!result) return;
     const text = result.links
-      .map((link) => `${link.description}\n${link.url}\nFrom: ${link.videoUrl}`)
+      .map((link) => `${link.preview?.title ?? link.host}\n${link.preview?.description ?? link.description}\n${link.url}\nFrom: ${link.videoUrl}`)
       .join('\n\n');
     await navigator.clipboard.writeText(text);
     setCopied(true);
@@ -67,7 +76,7 @@ function App() {
         <h1>Skip the video. Keep the useful tools.</h1>
         <p>
           Paste a YouTube video URL. YT2Do reads the description, removes creator/social/sponsor clutter,
-          and returns only useful external links with short descriptions and a reference back to the video.
+          visits each remaining target page, and returns pragmatic non-AI previews from page metadata/content.
         </p>
       </section>
 
@@ -112,16 +121,34 @@ function App() {
             </div>
           ) : (
             <div className="grid">
-              {result.links.map((link) => (
-                <article className="link-card" key={link.url}>
-                  <div className="host">{link.host}</div>
-                  <h3>{link.description}</h3>
-                  <div className="actions">
-                    <a href={link.url} target="_blank" rel="noreferrer">Open link <ExternalLink size={14} /></a>
-                    <a href={link.videoUrl} target="_blank" rel="noreferrer">Video source</a>
-                  </div>
-                </article>
-              ))}
+              {result.links.map((link) => {
+                const preview = link.preview;
+                const previewDescription = preview?.description ?? link.description;
+                return (
+                  <article className="link-card" key={link.url}>
+                    <div className="preview-strip">
+                      {preview?.image ? (
+                        <img className="preview-image" src={preview.image} alt="" loading="lazy" />
+                      ) : (
+                        <div className="preview-placeholder">
+                          {preview?.favicon ? <img src={preview.favicon} alt="" loading="lazy" /> : <Link2 size={24} />}
+                        </div>
+                      )}
+                    </div>
+                    <div className="host-row">
+                      {preview?.favicon && <img src={preview.favicon} alt="" loading="lazy" />}
+                      <span className="host" title={link.host}>{link.host}</span>
+                    </div>
+                    <h3 title={preview?.title ?? link.description}>{preview?.title ?? link.description}</h3>
+                    <p className="target-description">{previewDescription}</p>
+                    <p className="source-line">YouTube context: {link.description}</p>
+                    <a className="url-line" href={link.url} target="_blank" rel="noreferrer" title={link.url}>{link.url}</a>
+                    <div className="actions">
+                      <a href={link.url} target="_blank" rel="noreferrer">Open link <ExternalLink size={14} /></a>
+                    </div>
+                  </article>
+                );
+              })}
             </div>
           )}
         </section>

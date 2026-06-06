@@ -2,6 +2,7 @@ import express from 'express';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { extractFromYoutubeHtml, normalizeYoutubeUrl } from './extractor';
+import { fetchLinkPreview } from './preview';
 
 const app = express();
 const port = Number(process.env.PORT ?? 8787);
@@ -34,6 +35,12 @@ app.post('/api/extract', async (req, res) => {
 
     const html = await response.text();
     const result = extractFromYoutubeHtml(html, videoUrl);
+    result.links = await Promise.all(
+      result.links.map(async (link) => ({
+        ...link,
+        preview: await fetchLinkPreview(link.url, link.description)
+      }))
+    );
     res.json(result);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown fetch error';

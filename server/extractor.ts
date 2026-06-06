@@ -1,9 +1,12 @@
+import type { LinkPreview } from './preview';
+
 export type ExtractedLink = {
   url: string;
   host: string;
   description: string;
   videoTitle?: string;
   videoUrl: string;
+  preview?: LinkPreview;
 };
 
 export type ExtractionResult = {
