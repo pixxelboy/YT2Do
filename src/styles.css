@@ -70,6 +70,84 @@ h1 {
 
 .input-card { padding: clamp(18px, 3vw, 28px); }
 
+.account-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(280px, 0.9fr);
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.auth-card, .privacy-card { padding: clamp(18px, 3vw, 24px); }
+.auth-card form { display: grid; gap: 12px; }
+.auth-card input { margin-bottom: 2px; }
+.auth-card button[type="submit"] { margin-top: 6px; }
+
+.auth-tabs, .view-actions, .result-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.active-tab, .ghost-tab {
+  min-height: 42px;
+  padding: 0 14px;
+  border-radius: 999px;
+}
+
+.ghost-tab {
+  background: rgba(226, 232, 240, 0.08);
+  border: 1px solid rgba(226, 232, 240, 0.16);
+  color: #dbeafe;
+}
+
+.signed-in div, .privacy-card h2, .library-heading a {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.signed-in p, .privacy-card p {
+  color: #a8b3c7;
+  line-height: 1.45;
+}
+
+.notice {
+  margin: 0 0 18px;
+  padding: 16px 18px;
+  color: #dbeafe;
+  overflow-wrap: anywhere;
+}
+
+.notice.success { border-color: rgba(34, 197, 94, 0.36); color: #bbf7d0; }
+.notice.error { border-color: rgba(248, 113, 113, 0.36); color: #fecaca; }
+.notice.info { border-color: rgba(56, 189, 248, 0.32); }
+
+.library-collection {
+  margin-bottom: 34px;
+}
+
+.library-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  align-items: flex-end;
+  margin-bottom: 14px;
+}
+
+.library-heading h3 {
+  font-size: clamp(24px, 4vw, 34px);
+  letter-spacing: -0.04em;
+  margin-bottom: 8px;
+}
+
+.library-heading a { color: #c4b5fd; text-decoration: none; }
+
+.danger {
+  background: rgba(248, 113, 113, 0.12);
+  border: 1px solid rgba(248, 113, 113, 0.24);
+  color: #fecaca;
+}
+
 label {
   display: block;
   color: #cbd5e1;
@@ -310,7 +388,7 @@ button:disabled { opacity: 0.48; cursor: not-allowed; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 @media (max-width: 720px) {
-  .input-row, .result-header { grid-template-columns: 1fr; display: grid; }
+  .input-row, .result-header, .account-grid, .library-heading { grid-template-columns: 1fr; display: grid; }
   button { width: 100%; }
   .result-header { align-items: stretch; }
   h1 { letter-spacing: -0.055em; }

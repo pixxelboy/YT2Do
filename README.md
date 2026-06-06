@@ -9,6 +9,7 @@ What it does:
 - Extracts links from the video description only.
 - Filters common creator/social/profile links and likely sponsored/affiliate/promo links.
 - Fetches each remaining target page and builds a non-AI preview from target metadata, favicon, image, and visible paragraph text.
+- Supports verified user accounts so saved extracted-link collections stay private and available across devices.
 - Keeps each extracted link tied back to the original YouTube video URL.
 
 ## Run locally
@@ -27,6 +28,10 @@ npm run dev
 npm test
 npm run build
 ```
+
+## Accounts and email verification
+
+Accounts use email + password, scrypt password hashing, bearer sessions, and a private per-user library. In development, verification links are printed in the API logs and returned as `devVerificationUrl` so the flow is testable without configuring an SMTP provider. Production should wire a real mail sender before public launch.
 
 ## Filtering note
 
