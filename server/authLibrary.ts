@@ -33,8 +33,19 @@ export type LibraryItem = {
   videoUrl: string;
   videoTitle?: string;
   links: ExtractionResult['links'];
+  transcriptResources?: ExtractionResult['transcriptResources'];
   rejected: number;
   savedAt: string;
+};
+
+export type GuestImport = {
+  id: string;
+  guestId: string;
+  extraction: ExtractionResult;
+  createdAt: string;
+  claimedAt?: string;
+  claimedByUserId?: string;
+  libraryItemId?: string;
 };
 
 export type StoreData = {
@@ -42,6 +53,7 @@ export type StoreData = {
   sessions: Session[];
   verificationTokens: VerificationToken[];
   libraryItems: LibraryItem[];
+  guestImports: GuestImport[];
 };
 
 export type Store = {
@@ -55,7 +67,8 @@ export function createInMemoryStore(initial?: Partial<StoreData>): Store {
       users: initial?.users ?? [],
       sessions: initial?.sessions ?? [],
       verificationTokens: initial?.verificationTokens ?? [],
-      libraryItems: initial?.libraryItems ?? []
+      libraryItems: initial?.libraryItems ?? [],
+      guestImports: initial?.guestImports ?? []
     },
     persist: () => undefined
   };
@@ -144,10 +157,40 @@ export function saveExtractionToLibrary(store: Store, userId: string, extraction
     videoUrl: extraction.videoUrl,
     videoTitle: extraction.videoTitle,
     links: extraction.links,
+    transcriptResources: extraction.transcriptResources,
     rejected: extraction.rejected,
     savedAt: new Date().toISOString()
   };
   store.data.libraryItems.unshift(item);
+  store.persist();
+  return item;
+}
+
+export function createGuestImport(store: Store, guestId: string, extraction: ExtractionResult): GuestImport {
+  const item: GuestImport = {
+    id: randomToken(16),
+    guestId,
+    extraction,
+    createdAt: new Date().toISOString()
+  };
+  store.data.guestImports.unshift(item);
+  store.persist();
+  return item;
+}
+
+export function claimGuestImport(store: Store, userId: string, guestImportId: string, guestId: string): LibraryItem {
+  const guestImport = store.data.guestImports.find((entry) => entry.id === guestImportId && entry.guestId === guestId);
+  if (!guestImport) throw new Error('This unsaved import expired. Please run the import again.');
+
+  if (guestImport.libraryItemId) {
+    const existing = store.data.libraryItems.find((item) => item.id === guestImport.libraryItemId && item.userId === userId);
+    if (existing) return existing;
+  }
+
+  const item = saveExtractionToLibrary(store, userId, guestImport.extraction);
+  guestImport.claimedAt = new Date().toISOString();
+  guestImport.claimedByUserId = userId;
+  guestImport.libraryItemId = item.id;
   store.persist();
   return item;
 }

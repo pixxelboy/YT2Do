@@ -2,8 +2,9 @@ import express from 'express';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { extractFromYoutubeHtml, normalizeYoutubeUrl } from './extractor';
+import { fetchTranscript } from './transcript';
 import { fetchLinkPreview } from './preview';
-import { createAccount, createFileStore, deleteLibraryItem, getSessionUser, listLibrary, login, saveExtractionToLibrary, verifyEmail } from './authLibrary';
+import { claimGuestImport, createAccount, createFileStore, createGuestImport, deleteLibraryItem, getSessionUser, listLibrary, login, saveExtractionToLibrary, verifyEmail } from './authLibrary';
 
 const app = express();
 const port = Number(process.env.PORT ?? 8787);
@@ -79,6 +80,25 @@ app.post('/api/library', (req, res) => {
   res.status(201).json({ item: saveExtractionToLibrary(store, user.id, extraction) });
 });
 
+app.post('/api/library/claim', (req, res) => {
+  const user = getSessionUser(store, req.headers.authorization);
+  if (!user) {
+    res.status(401).json({ error: 'Sign in to save this import.' });
+    return;
+  }
+  const guestImportId = String(req.body?.guestImportId ?? '');
+  const guestId = String(req.body?.guestId ?? '');
+  if (!guestImportId || !guestId) {
+    res.status(400).json({ error: 'Missing unsaved import session.' });
+    return;
+  }
+  try {
+    res.status(201).json({ item: claimGuestImport(store, user.id, guestImportId, guestId) });
+  } catch (error) {
+    res.status(410).json({ error: error instanceof Error ? error.message : 'This unsaved import expired. Please run the import again.' });
+  }
+});
+
 app.delete('/api/library/:id', (req, res) => {
   const user = getSessionUser(store, req.headers.authorization);
   if (!user) {
@@ -113,13 +133,25 @@ app.post('/api/extract', async (req, res) => {
     }
 
     const html = await response.text();
-    const result = extractFromYoutubeHtml(html, videoUrl);
+    const initialResult = extractFromYoutubeHtml(html, videoUrl);
+    const needsTranscript = initialResult.extractionSource !== 'description_links' && Boolean(initialResult.transcriptUrl);
+    const transcript = needsTranscript ? await fetchTranscript(initialResult.transcriptUrl!, videoUrl).catch(() => '') : '';
+    const result = needsTranscript && transcript ? extractFromYoutubeHtml(html, videoUrl, transcript) : initialResult;
+    console.info('[YT2Do import debug]', JSON.stringify(result.debug));
     result.links = await Promise.all(
       result.links.map(async (link) => ({
         ...link,
         preview: await fetchLinkPreview(link.url, link.description)
       }))
     );
+
+    const guestId = String(req.body?.guestId ?? '').trim();
+    if (guestId) {
+      const guestImport = createGuestImport(store, guestId, result);
+      res.json({ ...result, guestImportId: guestImport.id, guestId });
+      return;
+    }
+
     res.json(result);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown fetch error';

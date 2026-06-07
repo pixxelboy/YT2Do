@@ -35,7 +35,18 @@ describe('account email verification and private library', () => {
         videoUrl: 'https://www.youtube.com/watch?v=abc12345678',
         preview: { title: 'Example Tool', description: 'A target-page description.', source: 'target-content' }
       }],
-      rejected: 0
+      rejected: 0,
+      extractionSource: 'description_links',
+      debug: {
+        videoId: 'abc12345678',
+        descriptionFetched: true,
+        descriptionLength: 42,
+        totalLinksFound: 1,
+        usefulLinksFound: 1,
+        lowValueLinksFound: 0,
+        extractionSource: 'description_links',
+        transcriptFetched: false
+      }
     });
 
     expect(listLibrary(store, firstSession.user.id)).toEqual([item]);
@@ -54,7 +65,18 @@ describe('account email verification and private library', () => {
     const item = saveExtractionToLibrary(store, ownerSession.user.id, {
       videoUrl: 'https://www.youtube.com/watch?v=abc12345678',
       links: [],
-      rejected: 0
+      rejected: 0,
+      extractionSource: 'none',
+      debug: {
+        videoId: 'abc12345678',
+        descriptionFetched: false,
+        descriptionLength: 0,
+        totalLinksFound: 0,
+        usefulLinksFound: 0,
+        lowValueLinksFound: 0,
+        extractionSource: 'none',
+        transcriptFetched: false
+      }
     });
 
     expect(deleteLibraryItem(store, otherSession.user.id, item.id)).toBe(false);

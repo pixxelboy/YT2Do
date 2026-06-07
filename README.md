@@ -6,7 +6,8 @@ What it does:
 
 - Accepts YouTube watch, Shorts, embed, and youtu.be URLs.
 - Fetches the public video page through a small local API, because browsers cannot reliably read YouTube pages directly due to CORS.
-- Extracts links from the video description only.
+- Extracts direct links from the video description.
+- Fetches available captions/transcripts and surfaces useful named tools/repos/products as unresolved transcript mentions when the description does not expose the actual links.
 - Filters common creator/social/profile links and likely sponsored/affiliate/promo links.
 - Fetches each remaining target page and builds a non-AI preview from target metadata, favicon, image, and visible paragraph text.
 - Supports verified user accounts so saved extracted-link collections stay private and available across devices.
