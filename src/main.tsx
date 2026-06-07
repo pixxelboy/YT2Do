@@ -75,6 +75,8 @@ type Notice = { kind: 'info' | 'error' | 'success'; text: string } | null;
 
 const TOKEN_KEY = 'yt2do.token';
 const GUEST_ID_KEY = 'yt2do.guestId';
+const THEME_KEY = 'yt2do.theme';
+type ThemeMode = 'light' | 'dark';
 
 function NoticeAlert({ notice }: { notice: Notice }) {
   if (!notice) return null;
@@ -96,6 +98,42 @@ function getGuestId() {
   return next;
 }
 
+function getInitialTheme(): ThemeMode {
+  const stored = localStorage.getItem(THEME_KEY);
+  const theme: ThemeMode = stored === 'dark' || stored === 'light'
+    ? stored
+    : window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  document.documentElement.classList.toggle('dark', theme === 'dark');
+  return theme;
+}
+
+function applyTheme(theme: ThemeMode) {
+  document.documentElement.classList.toggle('dark', theme === 'dark');
+  localStorage.setItem(THEME_KEY, theme);
+}
+
+function ThemeToggleIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      className="transition-transform duration-200"
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="2"
+      viewBox="0 0 24 24"
+    >
+      <path d="M0 0h24v24H0z" fill="none" stroke="none" />
+      <path d="M12 12m-9 0a9 9 0 1 0 18 0a9 9 0 1 0 -18 0" />
+      <path d="M12 3l0 18" />
+      <path d="M12 9l4.65 -4.65" />
+      <path d="M12 14.3l7.37 -7.37" />
+      <path d="M12 19.6l8.85 -8.85" />
+    </svg>
+  );
+}
+
 function App() {
   const [url, setUrl] = useState('');
   const [result, setResult] = useState<ExtractionResult | null>(null);
@@ -115,9 +153,14 @@ function App() {
   const [saving, setSaving] = useState(false);
   const [showAuth, setShowAuth] = useState(false);
   const [savePromptVisible, setSavePromptVisible] = useState(false);
+  const [theme, setTheme] = useState<ThemeMode>(getInitialTheme);
 
   const canSubmit = useMemo(() => url.trim().length > 8 && !loading, [url, loading]);
   const authHeaders = useMemo(() => token ? { Authorization: `Bearer ${token}` } : undefined, [token]);
+
+  useEffect(() => {
+    applyTheme(theme);
+  }, [theme]);
 
   useEffect(() => {
     if (!token) return;
@@ -268,8 +311,27 @@ function App() {
     setCopied(true);
   }
 
+  function toggleTheme() {
+    setTheme((current) => current === 'dark' ? 'light' : 'dark');
+  }
+
   return (
     <main className="shell shark-shell">
+      <div className="topbar">
+        <Button
+          aria-label="Toggle theme"
+          className="theme-toggle group"
+          data-mode={theme}
+          size="icon-md"
+          type="button"
+          variant="ghost"
+          onClick={toggleTheme}
+        >
+          <span className="group-data-[mode=dark]:[&_svg]:rotate-180">
+            <ThemeToggleIcon />
+          </span>
+        </Button>
+      </div>
       <section className="hero">
         <Badge className="hero-badge" variant="outline"><ShieldCheck size={16} /> No account needed</Badge>
         <h1>Skip the video. Keep the useful tools.</h1>

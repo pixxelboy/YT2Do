@@ -68,6 +68,25 @@ a { color: inherit; }
   padding: clamp(32px, 7vw, 72px) 0;
 }
 
+.topbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 18px;
+}
+
+.theme-toggle {
+  color: var(--muted-foreground);
+}
+
+.theme-toggle:hover {
+  color: var(--foreground);
+}
+
+.theme-toggle svg {
+  width: 16px;
+  height: 16px;
+}
+
 .hero {
   max-width: 760px;
   margin-bottom: 24px;
