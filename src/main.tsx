@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { Bookmark, ExternalLink, Filter, Link2, PlayCircle, ShieldCheck, UserRound, X } from 'lucide-react';
+import { ExternalLink, Filter, Link2, PlayCircle, ShieldCheck, UserRound, X } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -69,7 +69,6 @@ type ExtractionResult = {
 
 type User = { id: string; email: string; verifiedAt?: string };
 type Notice = { kind: 'info' | 'error' | 'success'; text: string } | null;
-type SaveCandidate = { title: string; description: string; url: string; source: string };
 
 const TOKEN_KEY = 'yt2do.token';
 const THEME_KEY = 'yt2do.theme';
@@ -131,12 +130,12 @@ function App() {
   const [copied, setCopied] = useState(false);
   const [token, setToken] = useState(() => localStorage.getItem(TOKEN_KEY) ?? '');
   const [user, setUser] = useState<User | null>(null);
+  const [authDrawerOpen, setAuthDrawerOpen] = useState(false);
   const [authEmail, setAuthEmail] = useState('');
   const [authPassword, setAuthPassword] = useState('');
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
   const [authLoading, setAuthLoading] = useState(false);
   const [notice, setNotice] = useState<Notice>(null);
-  const [saveCandidate, setSaveCandidate] = useState<SaveCandidate | null>(null);
   const [theme, setTheme] = useState<ThemeMode>(getInitialTheme);
 
   const canSubmit = useMemo(() => url.trim().length > 8 && !loading, [url, loading]);
@@ -145,6 +144,15 @@ function App() {
   useEffect(() => {
     applyTheme(theme);
   }, [theme]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('verified') === '1') {
+      const email = params.get('email');
+      setNotice({ kind: 'success', text: email ? `${email} is verified. You can now sign in.` : 'Email verified. You can now sign in.' });
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  }, []);
 
   useEffect(() => {
     if (!token) return;
@@ -158,13 +166,15 @@ function App() {
   }, [token, authHeaders]);
 
   useEffect(() => {
-    if (!saveCandidate) return;
+    if (!authDrawerOpen) return;
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') closeSaveDrawer();
+      if (event.key === 'Escape') closeAuthDrawer();
     };
     window.addEventListener('keydown', closeOnEscape);
     return () => window.removeEventListener('keydown', closeOnEscape);
-  }, [saveCandidate]);
+  }, [authDrawerOpen]);
+
+
 
   async function extract(event: React.FormEvent) {
     event.preventDefault();
@@ -202,16 +212,24 @@ function App() {
     setTheme((current) => current === 'dark' ? 'light' : 'dark');
   }
 
-  function openSaveDrawer(candidate: SaveCandidate) {
-    setSaveCandidate(candidate);
+  function openAuthDrawer() {
+    setAuthDrawerOpen(true);
     setNotice(null);
     if (!user) setAuthMode('login');
   }
 
-  function closeSaveDrawer() {
-    setSaveCandidate(null);
+  function closeAuthDrawer() {
+    setAuthDrawerOpen(false);
     setNotice(null);
     setAuthPassword('');
+  }
+
+  function signOut() {
+    localStorage.removeItem(TOKEN_KEY);
+    setToken('');
+    setUser(null);
+    setAuthPassword('');
+    setNotice({ kind: 'success', text: 'Signed out.' });
   }
 
   async function submitAuth(event: React.FormEvent) {
@@ -232,6 +250,7 @@ function App() {
             : payload.message
         });
         setAuthMode('login');
+        setAuthPassword('');
       } else {
         const payload = await api<{ token: string; user: User }>('/api/auth/login', {
           method: 'POST',
@@ -241,7 +260,7 @@ function App() {
         setToken(payload.token);
         setUser(payload.user);
         setAuthPassword('');
-        setNotice({ kind: 'success', text: 'Signed in. This resource is ready for the upcoming save/storage flow.' });
+        setNotice({ kind: 'success', text: 'Signed in.' });
       }
     } catch (err) {
       setNotice({ kind: 'error', text: err instanceof Error ? err.message : 'Authentication failed.' });
@@ -250,9 +269,21 @@ function App() {
     }
   }
 
+
   return (
     <main className="shell shark-shell">
       <div className="topbar">
+        <Button
+          aria-label={user ? 'Open account' : 'Sign in or sign up'}
+          className="account-toggle"
+          data-signed-in={user ? 'true' : 'false'}
+          size="icon-md"
+          type="button"
+          variant="ghost"
+          onClick={openAuthDrawer}
+        >
+          <UserRound size={16} />
+        </Button>
         <Button
           aria-label="Toggle theme"
           className="theme-toggle group"
@@ -274,6 +305,8 @@ function App() {
           Paste a YouTube video and turn it into actionable tasks. No account needed for your first import.
         </p>
       </section>
+
+      <NoticeAlert notice={notice} />
 
       <>
           <Card className="input-card" asChild>
@@ -320,30 +353,30 @@ function App() {
           )}
           {result && renderResults(result, {
             copied,
-            copyAll,
-            openSaveDrawer
+            copyAll
           })}
       </>
 
-      <SaveForLaterDrawer
+      <AuthDrawer
         authEmail={authEmail}
         authLoading={authLoading}
         authMode={authMode}
         authPassword={authPassword}
-        candidate={saveCandidate}
+        isOpen={authDrawerOpen}
         notice={notice}
         user={user}
         onAuthEmailChange={setAuthEmail}
         onAuthModeChange={setAuthMode}
         onAuthPasswordChange={setAuthPassword}
-        onClose={closeSaveDrawer}
+        onClose={closeAuthDrawer}
+        onSignOut={signOut}
         onSubmitAuth={submitAuth}
       />
     </main>
   );
 }
 
-function renderResults(result: ExtractionResult, actions: { copied: boolean; copyAll: () => void; openSaveDrawer: (candidate: SaveCandidate) => void }) {
+function renderResults(result: ExtractionResult, actions: { copied: boolean; copyAll: () => void }) {
   const transcriptResources = result.transcriptResources ?? [];
   const otherLinks = result.otherLinks ?? [];
   const totalResources = result.links.length + transcriptResources.length;
@@ -378,7 +411,7 @@ function renderResults(result: ExtractionResult, actions: { copied: boolean; cop
                 <p className="eyebrow">Found in video description</p>
                 <h3>Links found in the video description</h3>
               </div>
-              <div className="grid">{result.links.map((link) => renderLinkCard(link, actions.openSaveDrawer))}</div>
+              <div className="grid">{result.links.map((link) => renderLinkCard(link))}</div>
             </section>
           )}
           {transcriptResources.length > 0 && (
@@ -387,7 +420,7 @@ function renderResults(result: ExtractionResult, actions: { copied: boolean; cop
                 <p className="eyebrow">Extracted from transcript</p>
                 <h3>Generated from transcript because the description did not contain useful links</h3>
               </div>
-              <div className="grid">{transcriptResources.map((resource) => renderTranscriptResourceCard(resource, actions.openSaveDrawer))}</div>
+              <div className="grid">{transcriptResources.map((resource) => renderTranscriptResourceCard(resource))}</div>
             </section>
           )}
           {otherLinks.length > 0 && (
@@ -396,7 +429,7 @@ function renderResults(result: ExtractionResult, actions: { copied: boolean; cop
                 <p className="eyebrow">Other links found in description</p>
                 <h3>Low-value or self-promotional links</h3>
               </div>
-              <div className="grid">{otherLinks.map((link) => renderLinkCard(link, actions.openSaveDrawer))}</div>
+              <div className="grid">{otherLinks.map((link) => renderLinkCard(link))}</div>
             </section>
           )}
         </>
@@ -405,7 +438,7 @@ function renderResults(result: ExtractionResult, actions: { copied: boolean; cop
   );
 }
 
-function renderLinkCard(link: ExtractedLink, openSaveDrawer: (candidate: SaveCandidate) => void) {
+function renderLinkCard(link: ExtractedLink) {
   const preview = link.preview;
   const previewDescription = preview?.description ?? link.description;
   const title = preview?.title ?? link.description;
@@ -427,19 +460,12 @@ function renderLinkCard(link: ExtractedLink, openSaveDrawer: (candidate: SaveCan
       </CardHeader>
       <CardFooter>
         <Button asChild variant="outline" size="sm"><a href={link.url} target="_blank" rel="noreferrer">Open link <ExternalLink size={14} /></a></Button>
-        <Button
-          variant="secondary"
-          size="sm"
-          onClick={() => openSaveDrawer({ title, description: previewDescription, url: link.url, source: link.host })}
-        >
-          <Bookmark size={14} /> Save for later
-        </Button>
       </CardFooter>
     </Card>
   );
 }
 
-function renderTranscriptResourceCard(resource: TranscriptResource, openSaveDrawer: (candidate: SaveCandidate) => void) {
+function renderTranscriptResourceCard(resource: TranscriptResource) {
   const searchUrl = googleSearchUrl(resource.name);
   return (
     <Card className="link-card transcript-card" key={`${resource.name}-${resource.evidence.text}`}>
@@ -453,45 +479,41 @@ function renderTranscriptResourceCard(resource: TranscriptResource, openSaveDraw
       </CardHeader>
       <CardFooter>
         <Button asChild variant="outline" size="sm"><a href={searchUrl} target="_blank" rel="noreferrer">Search Google <ExternalLink size={14} /></a></Button>
-        <Button
-          variant="secondary"
-          size="sm"
-          onClick={() => openSaveDrawer({ title: resource.name, description: resource.description, url: searchUrl, source: 'Transcript resource' })}
-        >
-          <Bookmark size={14} /> Save for later
-        </Button>
       </CardFooter>
     </Card>
   );
 }
 
 
-function SaveForLaterDrawer(props: {
+
+
+function AuthDrawer(props: {
   authEmail: string;
   authLoading: boolean;
   authMode: 'login' | 'signup';
   authPassword: string;
-  candidate: SaveCandidate | null;
+  isOpen: boolean;
   notice: Notice;
   user: User | null;
   onAuthEmailChange: (value: string) => void;
   onAuthModeChange: (mode: 'login' | 'signup') => void;
   onAuthPasswordChange: (value: string) => void;
   onClose: () => void;
+  onSignOut: () => void;
   onSubmitAuth: (event: React.FormEvent) => void;
 }) {
-  if (!props.candidate) return null;
+  if (!props.isOpen) return null;
 
   return (
     <div className="drawer-layer">
-      <button className="drawer-backdrop" type="button" aria-label="Close save drawer" onClick={props.onClose} />
-      <aside className="save-drawer" role="dialog" aria-modal="true" aria-labelledby="save-drawer-title">
+      <button className="drawer-backdrop" type="button" aria-label="Close account drawer" onClick={props.onClose} />
+      <aside className="auth-drawer" role="dialog" aria-modal="true" aria-labelledby="auth-drawer-title">
         <div className="drawer-header">
           <div>
-            <p className="eyebrow">Save for later</p>
-            <h2 id="save-drawer-title">Create your saved list</h2>
+            <p className="eyebrow">YT2Do account</p>
+            <h2 id="auth-drawer-title">Sign in or create an account</h2>
           </div>
-          <Button aria-label="Close save drawer" size="icon-md" variant="ghost" type="button" onClick={props.onClose}>
+          <Button aria-label="Close account drawer" size="icon-md" variant="ghost" type="button" onClick={props.onClose}>
             <X size={16} />
           </Button>
         </div>
@@ -503,7 +525,8 @@ function SaveForLaterDrawer(props: {
             <UserRound size={20} />
             <div>
               <strong>{props.user.email}</strong>
-              <p>Signed in. Storage will be connected during the upcoming auth/storage review.</p>
+              <p>You are signed in.</p>
+              <Button type="button" variant="outline" size="sm" onClick={props.onSignOut}>Sign out</Button>
             </div>
           </div>
         ) : (
@@ -521,7 +544,7 @@ function SaveForLaterDrawer(props: {
               <Input size="lg" type="password" value={props.authPassword} onChange={(event: React.ChangeEvent<HTMLInputElement>) => props.onAuthPasswordChange(event.target.value)} placeholder="At least 8 characters" autoComplete={props.authMode === 'login' ? 'current-password' : 'new-password'} />
             </Field>
             <Button type="submit" size="xl" isLoading={props.authLoading}>
-              <UserRound size={18} /> {props.authMode === 'login' ? 'Sign in to save' : 'Create account'}
+              <UserRound size={18} /> {props.authMode === 'login' ? 'Sign in' : 'Create account'}
             </Button>
           </form>
         )}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createInMemoryStore, createAccount, verifyEmail, login, saveExtractionToLibrary, listLibrary, deleteLibraryItem } from './authLibrary';
+import { createInMemoryStore, createAccount, verifyEmail, login, saveExtractionToLibrary, listLibrary, deleteLibraryItem, resendVerification } from './authLibrary';
 
 describe('account email verification and private library', () => {
   it('requires email verification before login', async () => {
@@ -7,12 +7,55 @@ describe('account email verification and private library', () => {
     const signup = await createAccount(store, 'User@Example.com', 'correct horse battery staple');
 
     await expect(login(store, 'user@example.com', 'correct horse battery staple')).rejects.toThrow('Verify your email before signing in.');
+    expect(store.data.verificationTokens[0]).not.toHaveProperty('token', signup.verificationToken);
+    expect(store.data.verificationTokens[0].tokenHash).toMatch(/^[a-f0-9]{64}$/);
+    expect(store.data.verificationTokens[0].expiresAt).toBeTruthy();
 
     await verifyEmail(store, signup.verificationToken);
+    await expect(verifyEmail(store, signup.verificationToken)).rejects.toThrow('Invalid or expired verification token.');
     const session = await login(store, 'USER@example.com', 'correct horse battery staple');
 
     expect(session.token).toHaveLength(48);
     expect(session.user.email).toBe('user@example.com');
+  });
+
+  it('rejects expired verification links', async () => {
+    const store = createInMemoryStore();
+    const signup = await createAccount(store, 'expired@example.com', 'correct horse battery staple', {
+      now: new Date('2026-01-01T00:00:00.000Z')
+    });
+
+    await expect(verifyEmail(store, signup.verificationToken, new Date('2026-01-02T00:00:01.000Z')))
+      .rejects.toThrow('Invalid or expired verification token.');
+    expect(store.data.users[0].verifiedAt).toBeUndefined();
+  });
+
+  it('resends verification with a cooldown and replaces the previous token', async () => {
+    const store = createInMemoryStore();
+    const signup = await createAccount(store, 'resend@example.com', 'correct horse battery staple', {
+      now: new Date('2026-01-01T00:00:00.000Z')
+    });
+
+    await expect(resendVerification(store, 'resend@example.com', new Date('2026-01-01T00:00:30.000Z')))
+      .rejects.toThrow('Wait before requesting another verification email.');
+
+    const resent = await resendVerification(store, 'resend@example.com', new Date('2026-01-01T00:02:00.000Z'));
+
+    expect(resent?.verificationToken).toBeTruthy();
+    expect(resent?.verificationToken).not.toBe(signup.verificationToken);
+    await expect(verifyEmail(store, signup.verificationToken, new Date('2026-01-01T00:02:01.000Z')))
+      .rejects.toThrow('Invalid or expired verification token.');
+    await verifyEmail(store, resent!.verificationToken, new Date('2026-01-01T00:02:01.000Z'));
+    expect(store.data.users[0].verifiedAt).toBeTruthy();
+  });
+
+  it('keeps resend responses neutral for missing or already verified accounts', async () => {
+    const store = createInMemoryStore();
+    const signup = await createAccount(store, 'verified@example.com', 'correct horse battery staple');
+    await verifyEmail(store, signup.verificationToken);
+
+    await expect(resendVerification(store, 'missing@example.com')).resolves.toBeNull();
+    await expect(resendVerification(store, 'verified@example.com')).resolves.toBeNull();
   });
 
   it('keeps saved library links private to the verified account', async () => {

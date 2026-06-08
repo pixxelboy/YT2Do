@@ -1,4 +1,4 @@
-import { randomBytes, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
+import { createHash, randomBytes, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { promisify } from 'node:util';
@@ -22,9 +22,12 @@ export type Session = {
 };
 
 export type VerificationToken = {
-  token: string;
+  tokenHash: string;
   userId: string;
   createdAt: string;
+  expiresAt: string;
+  sentAt: string;
+  token?: string;
 };
 
 export type LibraryItem = {
@@ -88,7 +91,11 @@ export function createFileStore(filePathInput?: string): Store {
   };
 }
 
-export async function createAccount(store: Store, emailInput: string, password: string) {
+const VERIFICATION_TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
+const VERIFICATION_RESEND_COOLDOWN_MS = 60 * 1000;
+
+export async function createAccount(store: Store, emailInput: string, password: string, options: { now?: Date } = {}) {
+  const now = options.now ?? new Date();
   const email = normalizeEmail(emailInput);
   assertEmail(email);
   assertPassword(password);
@@ -106,27 +113,50 @@ export async function createAccount(store: Store, emailInput: string, password: 
     email,
     passwordSalt: salt,
     passwordHash: await hashPassword(password, salt),
-    createdAt: new Date().toISOString()
+    createdAt: now.toISOString()
   };
-  const verificationToken = randomToken(32);
+  const verification = createVerificationToken(user.id, now);
 
   store.data.users.push(user);
-  store.data.verificationTokens.push({ token: verificationToken, userId: user.id, createdAt: new Date().toISOString() });
+  store.data.verificationTokens.push(verification.entry);
   store.persist();
 
-  return { user: publicUser(user), verificationToken };
+  return { user: publicUser(user), verificationToken: verification.token };
 }
 
-export async function verifyEmail(store: Store, token: string) {
-  const verification = store.data.verificationTokens.find((entry) => entry.token === token);
+export async function verifyEmail(store: Store, token: string, now = new Date()) {
+  const tokenHash = hashVerificationToken(token);
+  const verification = store.data.verificationTokens.find((entry) => entry.tokenHash === tokenHash || entry.token === token);
   if (!verification) throw new Error('Invalid or expired verification token.');
+  if (new Date(verification.expiresAt).getTime() <= now.getTime()) {
+    store.data.verificationTokens = store.data.verificationTokens.filter((entry) => entry !== verification);
+    store.persist();
+    throw new Error('Invalid or expired verification token.');
+  }
   const user = store.data.users.find((entry) => entry.id === verification.userId);
   if (!user) throw new Error('Invalid verification token.');
 
-  user.verifiedAt = new Date().toISOString();
-  store.data.verificationTokens = store.data.verificationTokens.filter((entry) => entry.token !== token);
+  user.verifiedAt = now.toISOString();
+  store.data.verificationTokens = store.data.verificationTokens.filter((entry) => entry !== verification);
   store.persist();
   return publicUser(user);
+}
+
+export async function resendVerification(store: Store, emailInput: string, now = new Date()) {
+  const email = normalizeEmail(emailInput);
+  const user = store.data.users.find((entry) => entry.email === email);
+  if (!user || user.verifiedAt) return null;
+
+  const existing = store.data.verificationTokens.find((entry) => entry.userId === user.id);
+  if (existing && now.getTime() - new Date(existing.sentAt ?? existing.createdAt).getTime() < VERIFICATION_RESEND_COOLDOWN_MS) {
+    throw new Error('Wait before requesting another verification email.');
+  }
+
+  const verification = createVerificationToken(user.id, now);
+  store.data.verificationTokens = store.data.verificationTokens.filter((entry) => entry.userId !== user.id);
+  store.data.verificationTokens.push(verification.entry);
+  store.persist();
+  return { user: publicUser(user), verificationToken: verification.token };
 }
 
 export async function login(store: Store, emailInput: string, password: string) {
@@ -236,4 +266,23 @@ function assertPassword(password: string) {
 
 function randomToken(bytes: number) {
   return randomBytes(bytes).toString('hex');
+}
+
+function createVerificationToken(userId: string, now: Date) {
+  const token = randomToken(32);
+  const createdAt = now.toISOString();
+  return {
+    token,
+    entry: {
+      tokenHash: hashVerificationToken(token),
+      userId,
+      createdAt,
+      sentAt: createdAt,
+      expiresAt: new Date(now.getTime() + VERIFICATION_TOKEN_TTL_MS).toISOString()
+    }
+  };
+}
+
+function hashVerificationToken(token: string) {
+  return createHash('sha256').update(token).digest('hex');
 }

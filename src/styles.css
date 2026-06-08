@@ -71,17 +71,25 @@ a { color: inherit; }
 .topbar {
   display: flex;
   justify-content: flex-end;
+  gap: 8px;
   margin-bottom: 18px;
 }
 
+.account-toggle,
 .theme-toggle {
   color: var(--muted-foreground);
 }
 
+.account-toggle:hover,
 .theme-toggle:hover {
   color: var(--foreground);
 }
 
+.account-toggle[data-signed-in="true"] {
+  color: var(--primary);
+}
+
+.account-toggle svg,
 .theme-toggle svg {
   width: 16px;
   height: 16px;
@@ -391,7 +399,7 @@ h1 {
   backdrop-filter: blur(12px);
 }
 
-.save-drawer {
+.auth-drawer {
   position: relative;
   z-index: 1;
   width: min(440px, 100%);
@@ -421,30 +429,6 @@ h1 {
   letter-spacing: -0.045em;
 }
 
-.drawer-resource-card {
-  margin-bottom: 18px;
-  background: var(--card);
-}
-
-.drawer-resource-card [data-slot="card-header"] {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.drawer-resource-card [data-slot="card-title"] {
-  order: 2;
-}
-
-.drawer-resource-card [data-slot="card-description"] {
-  order: 3;
-}
-
-.drawer-resource-card [data-slot="badge"] {
-  order: 1;
-  width: fit-content;
-}
-
 .drawer-auth-form {
   display: grid;
   gap: 14px;
@@ -470,6 +454,10 @@ h1 {
   line-height: 1.45;
 }
 
+.drawer-signed-in button {
+  margin-top: 14px;
+}
+
 @keyframes drawer-in {
   from { transform: translateX(100%); }
   to { transform: translateX(0); }
@@ -490,7 +478,7 @@ h1 {
     width: 100%;
   }
 
-  .save-drawer {
+  .auth-drawer {
     border-left: 0;
   }
 
