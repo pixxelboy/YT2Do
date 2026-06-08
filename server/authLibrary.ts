@@ -229,6 +229,16 @@ export function listLibrary(store: Store, userId: string): LibraryItem[] {
   return store.data.libraryItems.filter((item) => item.userId === userId);
 }
 
+export function deleteLibraryLink(store: Store, userId: string, itemId: string, linkUrl: string): boolean {
+  const item = store.data.libraryItems.find((entry) => entry.userId === userId && entry.id === itemId);
+  if (!item) return false;
+  const before = item.links.length;
+  item.links = item.links.filter((link) => link.url !== linkUrl);
+  const deleted = item.links.length !== before;
+  if (deleted) store.persist();
+  return deleted;
+}
+
 export function deleteLibraryItem(store: Store, userId: string, itemId: string): boolean {
   const before = store.data.libraryItems.length;
   store.data.libraryItems = store.data.libraryItems.filter((item) => !(item.userId === userId && item.id === itemId));

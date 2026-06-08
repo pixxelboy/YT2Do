@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createInMemoryStore, createAccount, verifyEmail, login, saveExtractionToLibrary, listLibrary, deleteLibraryItem, resendVerification } from './authLibrary';
+import { createInMemoryStore, createAccount, verifyEmail, login, saveExtractionToLibrary, listLibrary, deleteLibraryItem, deleteLibraryLink, resendVerification } from './authLibrary';
 
 describe('account email verification and private library', () => {
   it('requires email verification before login', async () => {
@@ -94,6 +94,55 @@ describe('account email verification and private library', () => {
 
     expect(listLibrary(store, firstSession.user.id)).toEqual([item]);
     expect(listLibrary(store, secondSession.user.id)).toEqual([]);
+  });
+
+  it('allows users to delete a single link from their saved collection without deleting the collection', async () => {
+    const store = createInMemoryStore();
+    const owner = await createAccount(store, 'links-owner@example.com', 'owner password');
+    const other = await createAccount(store, 'links-other@example.com', 'other password');
+    await verifyEmail(store, owner.verificationToken);
+    await verifyEmail(store, other.verificationToken);
+    const ownerSession = await login(store, 'links-owner@example.com', 'owner password');
+    const otherSession = await login(store, 'links-other@example.com', 'other password');
+
+    const item = saveExtractionToLibrary(store, ownerSession.user.id, {
+      videoUrl: 'https://www.youtube.com/watch?v=abc12345678',
+      videoTitle: 'Useful tools',
+      links: [
+        {
+          url: 'https://example.com/keep',
+          host: 'example.com',
+          description: 'Keep this tool',
+          videoUrl: 'https://www.youtube.com/watch?v=abc12345678'
+        },
+        {
+          url: 'https://remove.example/tool',
+          host: 'remove.example',
+          description: 'Remove this tool',
+          videoUrl: 'https://www.youtube.com/watch?v=abc12345678'
+        }
+      ],
+      rejected: 0,
+      extractionSource: 'description_links',
+      debug: {
+        videoId: 'abc12345678',
+        descriptionFetched: true,
+        descriptionLength: 42,
+        totalLinksFound: 2,
+        usefulLinksFound: 2,
+        lowValueLinksFound: 0,
+        extractionSource: 'description_links',
+        transcriptFetched: false
+      }
+    });
+
+    expect(deleteLibraryLink(store, otherSession.user.id, item.id, 'https://remove.example/tool')).toBe(false);
+    expect(deleteLibraryLink(store, ownerSession.user.id, item.id, 'https://remove.example/tool')).toBe(true);
+
+    const [saved] = listLibrary(store, ownerSession.user.id);
+    expect(saved.id).toBe(item.id);
+    expect(saved.links).toHaveLength(1);
+    expect(saved.links[0].url).toBe('https://example.com/keep');
   });
 
   it('allows users to delete only their own saved collections', async () => {

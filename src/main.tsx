@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { ExternalLink, Filter, Link2, PlayCircle, ShieldCheck, UserRound, X } from 'lucide-react';
+import { ArrowDownWideNarrow, BookMarked, CalendarDays, ExternalLink, Filter, Link2, PlayCircle, Save, Search, ShieldCheck, Trash2, UserRound, X } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -69,6 +69,15 @@ type ExtractionResult = {
 
 type User = { id: string; email: string; verifiedAt?: string };
 type Notice = { kind: 'info' | 'error' | 'success'; text: string } | null;
+type LibraryItem = {
+  id: string;
+  videoUrl: string;
+  videoTitle?: string;
+  links: ExtractedLink[];
+  transcriptResources?: TranscriptResource[];
+  rejected: number;
+  savedAt: string;
+};
 
 const TOKEN_KEY = 'yt2do.token';
 const THEME_KEY = 'yt2do.theme';
@@ -131,6 +140,10 @@ function App() {
   const [token, setToken] = useState(() => localStorage.getItem(TOKEN_KEY) ?? '');
   const [user, setUser] = useState<User | null>(null);
   const [authDrawerOpen, setAuthDrawerOpen] = useState(false);
+  const [view, setView] = useState<'analysis' | 'library'>('analysis');
+  const [libraryItems, setLibraryItems] = useState<LibraryItem[]>([]);
+  const [libraryLoading, setLibraryLoading] = useState(false);
+  const [saveLoading, setSaveLoading] = useState(false);
   const [authEmail, setAuthEmail] = useState('');
   const [authPassword, setAuthPassword] = useState('');
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
@@ -224,10 +237,32 @@ function App() {
     setAuthPassword('');
   }
 
+  async function openLibraryPage() {
+    if (!user || !authHeaders) return;
+    setView('library');
+    setNotice(null);
+    setLibraryLoading(true);
+    try {
+      const payload = await api<{ items: LibraryItem[] }>('/api/library', { headers: authHeaders });
+      setLibraryItems(payload.items);
+    } catch (err) {
+      setNotice({ kind: 'error', text: err instanceof Error ? err.message : 'Could not load your library.' });
+    } finally {
+      setLibraryLoading(false);
+    }
+  }
+
+  function openAnalysisPage() {
+    setView('analysis');
+    setNotice(null);
+  }
+
   function signOut() {
     localStorage.removeItem(TOKEN_KEY);
     setToken('');
     setUser(null);
+    setLibraryItems([]);
+    setView('analysis');
     setAuthPassword('');
     setNotice({ kind: 'success', text: 'Signed out.' });
   }
@@ -269,10 +304,68 @@ function App() {
     }
   }
 
+  async function saveContentToLibrary() {
+    if (!result || !user || !authHeaders) return;
+    setSaveLoading(true);
+    setNotice(null);
+    try {
+      const payload = await api<{ item: LibraryItem }>('/api/library', {
+        method: 'POST',
+        headers: authHeaders,
+        body: JSON.stringify({ extraction: result })
+      });
+      setLibraryItems((current) => [payload.item, ...current.filter((item) => item.id !== payload.item.id)]);
+      setNotice({ kind: 'success', text: 'Content saved to your library.' });
+    } catch (err) {
+      setNotice({ kind: 'error', text: err instanceof Error ? err.message : 'Could not save this content.' });
+    } finally {
+      setSaveLoading(false);
+    }
+  }
+
+  async function deleteLibraryLink(itemId: string, linkUrl: string) {
+    if (!authHeaders) return;
+    try {
+      await api<void>(`/api/library/${itemId}/links`, {
+        method: 'DELETE',
+        headers: authHeaders,
+        body: JSON.stringify({ url: linkUrl })
+      });
+      setLibraryItems((current) => current.map((item) => item.id === itemId
+        ? { ...item, links: item.links.filter((link) => link.url !== linkUrl) }
+        : item
+      ));
+    } catch (err) {
+      setNotice({ kind: 'error', text: err instanceof Error ? err.message : 'Could not delete this link.' });
+    }
+  }
+
+  async function deleteLibraryItem(itemId: string) {
+    if (!authHeaders) return;
+    try {
+      await api<void>(`/api/library/${itemId}`, { method: 'DELETE', headers: authHeaders });
+      setLibraryItems((current) => current.filter((item) => item.id !== itemId));
+    } catch (err) {
+      setNotice({ kind: 'error', text: err instanceof Error ? err.message : 'Could not delete this library item.' });
+    }
+  }
+
 
   return (
     <main className="shell shark-shell">
       <div className="topbar">
+        {user && (
+          <Button
+            aria-label="Open library"
+            className="library-toggle"
+            size="icon-md"
+            type="button"
+            variant="ghost"
+            onClick={openLibraryPage}
+          >
+            <BookMarked size={16} />
+          </Button>
+        )}
         <Button
           aria-label={user ? 'Open account' : 'Sign in or sign up'}
           className="account-toggle"
@@ -308,7 +401,16 @@ function App() {
 
       <NoticeAlert notice={notice} />
 
-      <>
+      {view === 'library' && user ? (
+        <LibraryPage
+          items={libraryItems}
+          loading={libraryLoading}
+          onBackToAnalysis={openAnalysisPage}
+          onDelete={deleteLibraryItem}
+          onDeleteLink={deleteLibraryLink}
+        />
+      ) : (
+        <>
           <Card className="input-card" asChild>
             <form onSubmit={extract}>
               <CardContent>
@@ -353,9 +455,13 @@ function App() {
           )}
           {result && renderResults(result, {
             copied,
-            copyAll
+            copyAll,
+            isSignedIn: Boolean(user),
+            saveContentToLibrary,
+            saveLoading
           })}
-      </>
+        </>
+      )}
 
       <AuthDrawer
         authEmail={authEmail}
@@ -376,7 +482,7 @@ function App() {
   );
 }
 
-function renderResults(result: ExtractionResult, actions: { copied: boolean; copyAll: () => void }) {
+function renderResults(result: ExtractionResult, actions: { copied: boolean; copyAll: () => void; isSignedIn: boolean; saveContentToLibrary: () => void; saveLoading: boolean }) {
   const transcriptResources = result.transcriptResources ?? [];
   const otherLinks = result.otherLinks ?? [];
   const totalResources = result.links.length + transcriptResources.length;
@@ -395,6 +501,11 @@ function renderResults(result: ExtractionResult, actions: { copied: boolean; cop
           <a href={result.videoUrl} target="_blank" rel="noreferrer"><PlayCircle size={16} /> Check original video</a>
         </div>
         <div className="result-actions">
+          {actions.isSignedIn && (
+            <Button variant="default" onClick={actions.saveContentToLibrary} disabled={totalResources === 0} isLoading={actions.saveLoading}>
+              <Save size={16} /> Save content to your library
+            </Button>
+          )}
           <Button variant="secondary" onClick={actions.copyAll} disabled={totalResources === 0}>{actions.copied ? 'Copied' : 'Copy all'}</Button>
         </div>
       </div>
@@ -487,6 +598,209 @@ function renderTranscriptResourceCard(resource: TranscriptResource) {
 
 
 
+
+function LibraryPage(props: {
+
+  items: LibraryItem[];
+  loading: boolean;
+  onBackToAnalysis: () => void;
+  onDelete: (itemId: string) => void;
+  onDeleteLink: (itemId: string, linkUrl: string) => void;
+}) {
+  const [query, setQuery] = useState('');
+  const [sourceFilter, setSourceFilter] = useState<'all' | 'links' | 'transcript'>('all');
+  const [sortMode, setSortMode] = useState<'newest' | 'oldest' | 'resources'>('newest');
+
+  const stats = useMemo(() => libraryStats(props.items), [props.items]);
+  const visibleItems = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase();
+    return props.items
+      .filter((item) => matchesLibraryFilter(item, sourceFilter))
+      .filter((item) => matchesLibraryQuery(item, normalizedQuery))
+      .sort((a, b) => sortLibraryItems(a, b, sortMode));
+  }, [props.items, query, sourceFilter, sortMode]);
+
+  return (
+    <section className="library-page" aria-labelledby="library-page-title">
+        <div className="library-page-header library-drawer-header">
+          <div>
+            <p className="eyebrow">Private library</p>
+            <h2 id="library-page-title">Library command center</h2>
+            <p className="drawer-subtitle">Search, sort, and filter saved resources from your analyzed videos.</p>
+          </div>
+          <Button size="sm" variant="outline" type="button" onClick={props.onBackToAnalysis}>
+            <Link2 size={14} /> New analysis
+          </Button>
+        </div>
+
+        {props.loading ? (
+          <div className="drawer-loading"><Spinner className="size-5" /> Loading your library</div>
+        ) : props.items.length === 0 ? (
+          <Card className="empty"><CardContent>Your library is empty. Run an analysis and save the content from the results list.</CardContent></Card>
+        ) : (
+          <>
+            <div className="library-stats-grid" aria-label="Library summary">
+              <Card className="library-stat-card">
+                <CardContent>
+                  <BookMarked size={16} />
+                  <span>{props.items.length}</span>
+                  <small>Saved analyses</small>
+                </CardContent>
+              </Card>
+              <Card className="library-stat-card">
+                <CardContent>
+                  <Link2 size={16} />
+                  <span>{stats.links}</span>
+                  <small>Description links</small>
+                </CardContent>
+              </Card>
+              <Card className="library-stat-card">
+                <CardContent>
+                  <Filter size={16} />
+                  <span>{stats.transcript}</span>
+                  <small>Transcript resources</small>
+                </CardContent>
+              </Card>
+            </div>
+
+            <Card className="library-controls-card">
+              <CardContent>
+                <div className="library-search-field">
+                  <Search size={16} />
+                  <Input
+                    aria-label="Search library"
+                    size="lg"
+                    value={query}
+                    onChange={(event: React.ChangeEvent<HTMLInputElement>) => setQuery(event.target.value)}
+                    placeholder="Search by title, host, link, or resource…"
+                  />
+                </div>
+
+                <div className="library-control-section">
+                  <span><Filter size={14} /> Filter</span>
+                  <div className="library-segmented-control" role="group" aria-label="Filter saved content">
+                    <Button type="button" size="sm" variant={sourceFilter === 'all' ? 'default' : 'ghost'} onClick={() => setSourceFilter('all')}>All</Button>
+                    <Button type="button" size="sm" variant={sourceFilter === 'links' ? 'default' : 'ghost'} onClick={() => setSourceFilter('links')}>Links</Button>
+                    <Button type="button" size="sm" variant={sourceFilter === 'transcript' ? 'default' : 'ghost'} onClick={() => setSourceFilter('transcript')}>Transcript</Button>
+                  </div>
+                </div>
+
+                <div className="library-control-section">
+                  <span><ArrowDownWideNarrow size={14} /> Sort</span>
+                  <div className="library-segmented-control" role="group" aria-label="Sort saved content">
+                    <Button type="button" size="sm" variant={sortMode === 'newest' ? 'default' : 'ghost'} onClick={() => setSortMode('newest')}>Newest</Button>
+                    <Button type="button" size="sm" variant={sortMode === 'oldest' ? 'default' : 'ghost'} onClick={() => setSortMode('oldest')}>Oldest</Button>
+                    <Button type="button" size="sm" variant={sortMode === 'resources' ? 'default' : 'ghost'} onClick={() => setSortMode('resources')}>Most resources</Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <div className="library-results-meta">
+              <span>{visibleItems.length} {visibleItems.length === 1 ? 'collection' : 'collections'} shown</span>
+              {query && <Button type="button" size="sm" variant="ghost" onClick={() => setQuery('')}>Clear search</Button>}
+            </div>
+
+            {visibleItems.length === 0 ? (
+              <Card className="empty"><CardContent>No saved content matches this search/filter.</CardContent></Card>
+            ) : (
+              <div className="library-list expanded-library-list">
+                {visibleItems.map((item) => renderLibraryItem(item, props.onDelete, props.onDeleteLink))}
+              </div>
+            )}
+          </>
+        )}
+    </section>
+  );
+}
+
+function renderLibraryItem(item: LibraryItem, onDelete: (itemId: string) => void, onDeleteLink: (itemId: string, linkUrl: string) => void) {
+  const transcriptResources = item.transcriptResources ?? [];
+  const total = libraryItemResourceCount(item);
+  return (
+    <Card className="library-item" key={item.id}>
+      <CardHeader>
+        <div className="library-item-header-row">
+          <div>
+            <CardTitle>{item.videoTitle ?? 'Saved YouTube analysis'}</CardTitle>
+            <CardDescription>{total} saved resources · {new Date(item.savedAt).toLocaleDateString()}</CardDescription>
+          </div>
+          <Badge variant="outline"><CalendarDays size={13} /> {new Date(item.savedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</Badge>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="library-resource-list">
+          {item.links.map((link) => (
+            <div className="library-resource-row" key={link.url}>
+              <a href={link.url} target="_blank" rel="noreferrer">
+                <span>{link.preview?.title ?? link.host}</span>
+                <small>{link.host}</small>
+              </a>
+              <Button
+                aria-label={`Delete ${link.preview?.title ?? link.host} from this collection`}
+                className="library-link-delete"
+                size="icon-sm"
+                type="button"
+                variant="ghost"
+                onClick={() => onDeleteLink(item.id, link.url)}
+              >
+                <Trash2 size={14} />
+              </Button>
+            </div>
+          ))}
+          {transcriptResources.map((resource) => {
+            const searchUrl = googleSearchUrl(resource.name);
+            return (
+              <a key={`${item.id}-${resource.name}`} href={searchUrl} target="_blank" rel="noreferrer">
+                <span>{resource.name}</span>
+                <small>Transcript resource</small>
+              </a>
+            );
+          })}
+        </div>
+      </CardContent>
+      <CardFooter>
+        <Button asChild variant="outline" size="sm"><a href={item.videoUrl} target="_blank" rel="noreferrer">Original video <ExternalLink size={14} /></a></Button>
+        <Button variant="ghost" size="sm" type="button" onClick={() => onDelete(item.id)}><Trash2 size={14} /> Delete collection</Button>
+      </CardFooter>
+    </Card>
+  );
+}
+
+function libraryStats(items: LibraryItem[]) {
+  return items.reduce((stats, item) => ({
+    links: stats.links + item.links.length,
+    transcript: stats.transcript + (item.transcriptResources?.length ?? 0)
+  }), { links: 0, transcript: 0 });
+}
+
+function libraryItemResourceCount(item: LibraryItem) {
+  return item.links.length + (item.transcriptResources?.length ?? 0);
+}
+
+function matchesLibraryFilter(item: LibraryItem, filter: 'all' | 'links' | 'transcript') {
+  if (filter === 'links') return item.links.length > 0;
+  if (filter === 'transcript') return (item.transcriptResources?.length ?? 0) > 0;
+  return true;
+}
+
+function matchesLibraryQuery(item: LibraryItem, query: string) {
+  if (!query) return true;
+  const haystack = [
+    item.videoTitle,
+    item.videoUrl,
+    ...item.links.flatMap((link) => [link.url, link.host, link.description, link.preview?.title, link.preview?.description]),
+    ...(item.transcriptResources ?? []).flatMap((resource) => [resource.name, resource.description, resource.evidence.text])
+  ].filter(Boolean).join(' ').toLowerCase();
+  return haystack.includes(query);
+}
+
+function sortLibraryItems(a: LibraryItem, b: LibraryItem, sortMode: 'newest' | 'oldest' | 'resources') {
+  if (sortMode === 'resources') return libraryItemResourceCount(b) - libraryItemResourceCount(a);
+  const diff = new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime();
+  return sortMode === 'newest' ? diff : -diff;
+}
+
 function AuthDrawer(props: {
   authEmail: string;
   authLoading: boolean;
@@ -507,7 +821,7 @@ function AuthDrawer(props: {
   return (
     <div className="drawer-layer">
       <button className="drawer-backdrop" type="button" aria-label="Close account drawer" onClick={props.onClose} />
-      <aside className="auth-drawer" role="dialog" aria-modal="true" aria-labelledby="auth-drawer-title">
+      <aside className="app-drawer auth-drawer" role="dialog" aria-modal="true" aria-labelledby="auth-drawer-title">
         <div className="drawer-header">
           <div>
             <p className="eyebrow">YT2Do account</p>

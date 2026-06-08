@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { extractFromYoutubeHtml, normalizeYoutubeUrl } from './extractor';
 import { fetchTranscript } from './transcript';
 import { fetchLinkPreview } from './preview';
-import { claimGuestImport, createAccount, createFileStore, createGuestImport, deleteLibraryItem, getSessionUser, listLibrary, login, resendVerification, saveExtractionToLibrary, verifyEmail } from './authLibrary';
+import { claimGuestImport, createAccount, createFileStore, createGuestImport, deleteLibraryItem, deleteLibraryLink, getSessionUser, listLibrary, login, resendVerification, saveExtractionToLibrary, verifyEmail } from './authLibrary';
 import { sendVerificationEmail } from './email';
 
 const app = express();
@@ -120,6 +120,24 @@ app.post('/api/library/claim', (req, res) => {
   } catch (error) {
     res.status(410).json({ error: error instanceof Error ? error.message : 'This unsaved import expired. Please run the import again.' });
   }
+});
+
+app.delete('/api/library/:id/links', (req, res) => {
+  const user = getSessionUser(store, req.headers.authorization);
+  if (!user) {
+    res.status(401).json({ error: 'Sign in to manage your private library.' });
+    return;
+  }
+  const linkUrl = String(req.body?.url ?? '');
+  if (!linkUrl) {
+    res.status(400).json({ error: 'Missing link URL.' });
+    return;
+  }
+  if (!deleteLibraryLink(store, user.id, req.params.id, linkUrl)) {
+    res.status(404).json({ error: 'Library link not found.' });
+    return;
+  }
+  res.status(204).send();
 });
 
 app.delete('/api/library/:id', (req, res) => {
